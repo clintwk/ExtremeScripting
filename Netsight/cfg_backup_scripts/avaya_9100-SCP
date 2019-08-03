@@ -1,0 +1,83 @@
+-- Use this to copy and restore Avaya 9100 backups, update firmware, and reboot the APs (AOS only, not AOS-Lite)
+name="Avaya 9100 - scp"
+desc="Avaya 9100 SSH/SCP Script"
+protocol=SCP
+
+-- Written by Clint Kennedy of Integration Partners - ckennedy@integrationpartners.com
+-- WARNING - Use at your own risk!
+-- WARNING - The firmware update doesn't set a backup image filename. Suggest setting this after with the following command: boot-env set bootfile_backup image.bin
+-- WARNING - The firmware update doesn't set a backup image filename. Suggest setting this after with the following command: boot-env set bootfile_backup image.bin
+
+--
+separator=UNIX_FILE_SEPARATOR
+timed_reset_delay_format="HH:mm"
+perform_success_test_always=true
+-----BEGIN SCRIPT "Configuration Upload"-----
+configure
+
+@# AOS adds .conf to the end of saves. We're renaming the file to temp.filename.conf so that we can rename it easier later. AOS has a nasty auto-complete "feature"
+save temp.%TARGET_FILE_NAME%
+
+@# rename the temp.filename.conf to filename
+file rename temp.%TARGET_FILE_NAME%.conf %TARGET_FILE_NAME%
+
+@# copy the filename to the server
+file scp %TARGET_FILE_NAME% %SCP_USER%@%SCP_IP%:%ABSOLUTE_TARGET_FILE_PATH%
+@receive 1
+%SCP_PSWD%
+@RECEIVEUNTIL 60 "100%"
+file rm %TARGET_FILE_NAME%
+exit
+exit
+-----END SCRIPT-----
+-----BEGIN SCRIPT "Configuration Download"-----
+configure
+file scp %SCP_USER%@%SCP_IP%:%ABSOLUTE_TARGET_FILE_PATH% %TARGET_FILE_NAME%.conf
+@receive 1
+%SCP_PSWD%
+
+@# change the time to longer if on a slow connection
+@RECEIVEUNTIL 60 "100%"
+
+@# load the configuration file we just transferred and then remove it and save
+load %TARGET_FILE_NAME%.conf stop-on-error
+@RECEIVEUNTIL 180 "(config)#"
+file rm %TARGET_FILE_NAME%.conf
+save
+@RECEIVEUNTIL 30 "OK"
+exit
+exit
+-----END SCRIPT-----
+-----BEGIN SUCCESS "Configuration Upload"-----
+100%
+-----END SUCCESS-----
+-----BEGIN SUCCESS "Configuration Download"-----
+OK
+-----END SUCCESS-----
+-----BEGIN SCRIPT "Firmware Download"-----
+configure
+
+@# copy the filename to the server
+file scp %SCP_USER%@%SCP_IP%:%ABSOLUTE_TARGET_FILE_PATH% %TARGET_FILE_NAME%
+@receive 1
+%SCP_PSWD%
+
+@# change the time to longer if on a slow connection
+@RECEIVEUNTIL 180 "100%"
+
+@# set the firmware to the file we just transferred
+boot-env set bootfile_active %TARGET_FILE_NAME%
+save
+@RECEIVEUNTIL 30 "OK"
+exit
+exit
+-----END SCRIPT-----
+-----BEGIN SUCCESS "Firmware Download"-----
+OK
+-----END SUCCESS-----
+-----BEGIN SCRIPT "Reset"-----
+configure
+reboot
+@receive 1
+yes
+-----END SCRIPT-----
